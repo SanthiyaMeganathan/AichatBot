@@ -1,3 +1,4 @@
+import chromadb
 from flask import Flask, render_template, request, jsonify, stream_with_context, Response
 from datetime import datetime, timezone, timedelta, time
 from flask_sqlalchemy import SQLAlchemy
@@ -5,14 +6,12 @@ import json
 import dateparser
 from flask import current_app
 from litellm import completion
+from chromadb.utils import embedding_functions
 app = Flask(__name__)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///chat_history.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
-
-
-
 class ChatHistory(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     role = db.Column(db.String(10), nullable=False)
@@ -75,6 +74,7 @@ def show_available_slots(target_date_str):
         all_slot_statuses.append(f"{slot.strftime('%I:%M %p')} is {status}")
         
     return json.dumps({
+        "type": "slot",
         "status": "success",
         "target_date": str(target_date),
         "has_available_slots": len(valid_available_slots) > 0,
@@ -149,7 +149,12 @@ def book_appointment(name, phone, date_str, time_str):
 def fetch_appointments(user_name, user_phone_number):
     """Fetches all appointments for a given user using the username and phone number."""
     with app.app_context():
-        appointments = Appointment.query.filter_by(name=user_name, phone_number=user_phone_number).all()
+
+        appointments = Appointment.query.filter(
+            Appointment.name.ilike(user_name),
+            Appointment.phone_number == user_phone_number
+        ).all()
+        
 
         if not appointments:
             return json.dumps({
@@ -211,13 +216,26 @@ def reschedule_appointment(name, phone, new_date_str, new_time_str):
         return json.dumps({"status": "error", "message": "That time slot has already passed today."})
 
     with app.app_context():
-        record = Appointment.query.filter_by(name=name, phone_number=phone).first()
+        record = Appointment.query.filter(
+            Appointment.name.ilike(name),
+            Appointment.phone_number == phone
+        ).first()
+       
 
         if not record:
             return json.dumps({
                 "status":"error",
                 "message":f"No appointment found for {name} with phone number {phone}."
-            })     
+            })   
+
+        appt_datetime = datetime.combine(record.appointment_date, record.appointment_time)
+        time_diff = appt_datetime -datetime.now()
+
+        if time_diff.total_seconds() <14400:
+            return json.dumps({
+                "status":"error",
+                "message":"you cannot cancel or reschedule an appointment within 4 hours of the scheduled time as per clinic policy."
+            })
 
         conflict = Appointment.query.filter_by(
             appointment_date = new_date_only,
@@ -254,12 +272,24 @@ def reschedule_appointment(name, phone, new_date_str, new_time_str):
 def delete_appointment(name, phone):
     """ Tool to cancel or delete the existing appointment . """
     with app.app_context():
-        record = Appointment.query.filter_by(name=name, phone_number=phone).first()
+        record = Appointment.query.filter(
+            Appointment.name.ilike(name),
+            Appointment.phone_number == phone
+        ).first()
 
         if not record:
             return json.dumps({ 
                 "status": "error",
                 "message": f"No appointment found for {name} with the phone number {phone}"
+            })
+        
+        appt_datetime = datetime.combine(record.appointmenr_date,record.appointment_time)
+        time_diff = appt_datetime - datetime.now()
+
+        if time_diff.total_seconds()<14400:
+            return json.dumps({
+                "status":"error",
+                "message":"you cannot cancel or reschedule an appointment now as per clinic policy, cancellations or rescheduling must be done at least 4 hours before the scheduled appointment time."
             })
 
         deleted_date = record.appointment_date.strftime("%Y-%m-%d")
@@ -277,6 +307,46 @@ def delete_appointment(name, phone):
                 "cancelled_date": deleted_date,
                 "cancelled_time": deleted_time
             }
+        })
+def search_knowledge_base(user_query):
+    """ Search the vector database and return result as a Json String""" 
+    try:
+        client = chromadb.PersistentClient(path="./chromadb")
+
+        ollama_ef = embedding_functions.OllamaEmbeddingFunction(
+            model_name="nomic-embed-text",
+            url="http://localhost:11434/api/embeddings",
+        )
+        
+        collection = client.get_collection(
+            name="dr_akansha_booking_system_knowledge_base",
+        )
+        question_embedding = ollama_ef(user_query)
+
+        results = collection.query(
+            query_embeddings=[question_embedding],
+            n_results=2
+        )
+
+        documents = results.get('documents', [[]])[0]
+
+        if not documents:
+            return json.dumps({
+                "status": "no_results",
+                "message": "No specific information found in the knowledge base.",
+                "context": ""
+            })
+            
+        return json.dumps({
+            "status": "success",
+            "query": user_query,
+            "context": "\n".join(documents)
+        })
+        
+    except Exception as e:
+        return json.dumps({
+            "status": "error",
+            "message": str(e)
         })
 
 TOOLS = [
@@ -357,15 +427,36 @@ TOOLS = [
                 "required":["name","phone"]
             }
         }
+    },
+    {
+        "type":"function",
+        "function": {
+            "name": "search_knowledge_base",
+            "description": "Consult this for diabetes medical facts, clinic fees, fasting rules, and all clinic policies (like the 4-hour cancellation rule).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "user_query": {"type": "string", "description": "The patient's question."}
+                },
+                "required": ["user_query"]
+            }
+        }
+        
     }
 ]
-
-
-
-
 @app.route('/')
 def hello_world():
     return render_template('index.html')
+
+@app.route('/clear', methods=['POST'])
+def clear_history():
+    try:
+        db.session.query(ChatHistory).delete()
+        db.session.commit()
+        return jsonify({"status":"success","message":"Chat history table cleared."})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"status":"error","message":f"Failed to clear chat history: {str(e)}"}) 
 
 @app.route('/chat', methods=['POST'])
 def chat_route():
@@ -380,39 +471,46 @@ def chat_route():
     SYSTEM_PROMPT = f"""
 1. ROLE & TONE
 You are a polite, empathetic, and human-like assistant for Dr. Akansha (Diabetes Specialist).
-Speak naturally and calmly. Never sound robotic.
-Never reveal your internal tool usage, JSON, or thinking process to the user.
+Speak naturally and calmly. Keep responses under 40 words. 
+Ask ONLY ONE question per response. Never reveal internal tool names or JSON.
 
 2. GREETING & SCOPE
-- Greet new conversations with exactly: "Hello, I'm Dr. Akansha's assistant. How can I help you with your health concerns today?"
-- Dr. Akansha ONLY treats diabetes. If the user mentions a non-diabetes issue, politely recommend they see an appropriate specialist (e.g., Dermatologist) and do not offer to book an appointment.
+- Greet with: "Hello, I'm Dr. Akansha's assistant. How can I help you with your health concerns today?"
+- Dr. Akansha ONLY treats diabetes. For other issues, suggest a specialist and do not book.
 
-3. CONVERSATION & BOOKING FLOW
-You must gather information strictly ONE piece at a time to keep it conversational. 
-Do not ask for Name, Phone, and Date in the same sentence. 
-Follow this order for bookings:
-  Step 1: Ask for Full Name.
-  Step 2: Ask for 10-digit Phone Number.
-  Step 3: Ask for Preferred Date.
-  Step 4: Use the `show_available_slots` tool to check that date.
-  Step 5: Present ONLY the available slots to the user and ask them to pick one.
-  Step 6: Use the `book_appointment` tool to finalize the booking.
+3. KNOWLEDGE RETRIEVAL (RAG)
+- If the user asks about clinic fees, fasting rules, what to bring, diabetes facts, or policies, YOU MUST use the `search_knowledge_base` tool.
+- Use the "context" returned by the tool to answer accurately. 
+- If the tool says "no_results", politely say: "I'm not sure about that specific detail, but Dr. Akansha can discuss it during your visit."
 
-4. TOOL USAGE & ERROR HANDLING
-- NEVER invent, guess, or assume available time slots. You MUST use the `show_available_slots` tool.
-- If a tool returns a JSON with "status": "error" (e.g., the date is in the past, or the clinic is closed), gently explain the exact error to the user and ask them to provide a new date or time.
-- Use `fetch_appointments`, `reschedule_appointment`, or `delete_appointment` when the user asks to view, change, or cancel their bookings.
+4. CONVERSATION & BOOKING FLOW
+Step 0: If diabetes-related, ask if they want to book. 
+If 'no', end politely.
+ If 'yes', follow steps:
+Step 1: Ask The Full Name 
+Step 2: Ask for the 10-digit Phone number
+Step 3: Ask for a Preferred Date 
+Step 4: Ask the user if they want to see the available slots for the preferred date that they mentioned
+Step 5: If the user says yes, use this `show_available_slots` tool and show the slots , when ever you show the slots to user always use this tool `show_available_slots` and show it in gen ui.
+Step 6: The user will choose a slot from the available options
+Step 7: Use this tool `book_appointment` to book the appointment
 
-5. STRICT OUTPUT CONTROL
-- Keep your responses under 40 words.
-- Ask ONLY ONE question per response.
-- NEVER answer your own questions or simulate the user's reply.
-- Stop generating text the absolute second you finish your sentence.
+5. CANCELLATION & RESCHEDULING
+- Use `fetch_appointments`, `reschedule_appointment`, or `delete_appointment` for changes.
+- If a user asks about the cancellation policy or reschedule policy, use `search_knowledge_base` to explain the 4-hour rule.
+- If a tool returns an error (like "less than 4 hours left"), explain it gently to the user.That we cannot cancel or reschedule the appointment when we have less than 4 hours left for the appointment timing.
+
+6. STRICT LIMITS
+- Do not give medical prescriptions or specific diagnoses.
+- Stop generating text immediately after finishing your sentence.
 
 CURRENT SYSTEM CONTEXT:
 Today's date is {today_date} ({weekday_name})
 Current time is {current_time_str}
-Appointments allowed from today until {end_date}
+Appointments allowed until {end_date}
+
+
+
 """
 
     data = request.get_json()
@@ -434,7 +532,6 @@ Appointments allowed from today until {end_date}
 
         @stream_with_context 
         def generate():
-           
             response = completion(
                 model='ollama/gpt-oss:120b-cloud',
                 messages=messages,
@@ -449,14 +546,17 @@ Appointments allowed from today until {end_date}
             
             if response_message.tool_calls:
                 messages.append(response_message)
+                short_circuit_json = None
 
-               
                 for tool_call in response_message.tool_calls:
                     func_name = tool_call.function.name
                     args = json.loads(tool_call.function.arguments)
 
                     if func_name == "show_available_slots":
                         result = show_available_slots(args.get("target_date_str"))
+                        parsed_result = json.loads(result)
+                        if parsed_result.get("status") == "success":
+                            short_circuit_json = result
                     elif func_name == "book_appointment":
                         result = book_appointment(args.get("name"), args.get("phone"), args.get("date_str"), args.get("time_str")) 
                     elif func_name == "fetch_appointments":
@@ -464,7 +564,9 @@ Appointments allowed from today until {end_date}
                     elif func_name == "reschedule_appointment":
                         result = reschedule_appointment(args.get("name"), args.get("phone"), args.get("new_date_str"), args.get("new_time_str"))  
                     elif func_name == "delete_appointment":
-                        result = delete_appointment(args.get("name"), args.get("phone"))   
+                        result = delete_appointment(args.get("name"), args.get("phone"))  
+                    elif func_name == "search_knowledge_base":
+                        result=search_knowledge_base(args.get("user_query"))    
                     else:
                         result = json.dumps({"error": "Function not found"})    
 
@@ -475,26 +577,28 @@ Appointments allowed from today until {end_date}
                         "tool_call_id": tool_call.id
                     })
 
-            
-                final_response = completion(
-                    model='ollama/gpt-oss:120b-cloud',
-                    messages=messages,
-                    api_base="http://localhost:11434",
-                    temperature=0.4,
-                    stream=True
-                )  
-
-                for chunk in final_response:
-                    token = chunk.choices[0].delta.content or ""
-                    if token:
-                        full_bot_reply += token
-                        yield token
+             
+                if short_circuit_json:
+                    full_bot_reply = short_circuit_json
+                    yield short_circuit_json    
+                else:
+                    final_response = completion(
+                        model='ollama/gpt-oss:120b-cloud',
+                        messages=messages,
+                        api_base="http://localhost:11434",
+                        temperature=0.4,
+                        stream=True
+                    )
+                    for chunk in final_response:
+                        token = chunk.choices[0].delta.content or ""
+                        if token:
+                            full_bot_reply += token
+                            yield token
             else:
            
                 full_bot_reply = response_message.content or ""
                 yield full_bot_reply
 
-        
             try:
                 with current_app.app_context():
                     db.session.add(ChatHistory(role='bot', content=full_bot_reply.strip())) 

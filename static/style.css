@@ -52,38 +52,34 @@
     cursor: pointer;
 }
 
-/* Container for all messages */
 .chat-display {
     display: flex;
     flex-direction: column;
     gap: 10px;
     padding: 15px;
-    /* FIX 1: Ensure it takes all available middle space but doesn't grow past 15cm */
     flex: 1; 
     overflow-y: auto; 
-    overflow-x: hidden; /* Prevents horizontal scroll */
+    overflow-x: hidden; 
 }
 
 .message {
     padding: 10px 15px;
     border-radius: 18px;
-    max-width: 85%; /* Keeps bubbles from hitting the other side */
+    max-width: 85%; 
     font-family: sans-serif;
     font-size: 14px;
     line-height: 1.5;
-    
-    /* FIX 2: Essential for long words or links */
     word-wrap: break-word;     
     overflow-wrap: break-word; 
-    white-space: pre-wrap;    /* Keeps paragraphs but wraps lines */
+    white-space: pre-wrap;   
 }
 
-/* Specific style for User messages (moves them to the right) */
+
 .user-message {
     align-self: flex-end;
     background-color: royalblue;
     color: white;
-    border-bottom-right-radius: 2px; /* Makes it look like a chat bubble */
+    border-bottom-right-radius: 2px;
 }
 
 .bot-message{
@@ -91,7 +87,74 @@
     align-self:flex-start;
     background-color:gainsboro;
     color: black;
-    border-bottom-left-radius: 2px; /* Makes it look like a chat bubble */  
+    border-bottom-left-radius: 2px;  
 
 
+}
+
+
+.bot-message {
+    align-self: flex-start;
+    background-color: lightgray;
+    color: black;
+    border-radius: 12px;
+    border-bottom-left-radius: 2px;
+    padding: 12px 16px;
+    max-width: 80%; 
+    box-sizing: border-box;
+}
+
+
+.slot-container {
+    border: 1px solid lightgray;
+    padding: 12px;
+    border-radius: 8px;
+    background-color: white;
+    width: 100%; 
+    min-width: 200px; 
+    box-sizing: border-box; 
+    margin-top: 8px;
+}
+
+.slot-container p {
+    margin: 0 0 10px 0;
+    font-weight: 600;
+    font-size: 0.95em;
+    color: #374151;
+}
+
+.slot-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    padding: 8px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    background-color: #f9fafb;
+    box-sizing: border-box;
+    gap: 15px; 
+}
+
+.slot-time {
+    font-weight: bold;
+    color: rgb(92, 92, 244); 
+    font-size: 0.9em;
+}
+
+.select-btn {
+    background-color:rgb(92, 92, 244); 
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 0.85em;
+    font-weight: bold;
+    white-space: nowrap; 
+    transition: background-color 0.2s ease;
+}
+
+.select-btn:hover {
+    background-color: darkblue; 
 }
