@@ -7,7 +7,14 @@ import dateparser
 from flask import current_app
 from litellm import completion
 from chromadb.utils import embedding_functions
+import os
+import re
+
 app = Flask(__name__)
+
+# If Docker sets 'OLLAMA_URL', it uses that. Otherwise, it defaults to localhost.
+OLLAMA_BASE_URL = os.environ.get('OLLAMA_URL', 'http://localhost:11434')
+
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///chat_history.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -315,7 +322,7 @@ def search_knowledge_base(user_query):
 
         ollama_ef = embedding_functions.OllamaEmbeddingFunction(
             model_name="nomic-embed-text",
-            url="http://localhost:11434/api/embeddings",
+            url=f"{OLLAMA_BASE_URL}/api/embeddings",
         )
         
         collection = client.get_collection(
@@ -526,6 +533,8 @@ Today's date is {today_date} ({weekday_name})
 Current time is {current_time_str}
 Appointments allowed until {end_date}
 
+MOST IMPORTANT RULE: never return anything as a json.
+
 
 
 """
@@ -552,7 +561,7 @@ Appointments allowed until {end_date}
             response = completion(
                 model='ollama/gpt-oss:120b-cloud',
                 messages=messages,
-                api_base="http://localhost:11434",
+                api_base=OLLAMA_BASE_URL,
                 temperature=0.4,
                 tools=TOOLS,
                 stream=False
@@ -602,7 +611,7 @@ Appointments allowed until {end_date}
                     final_response = completion(
                         model='ollama/gpt-oss:120b-cloud',
                         messages=messages,
-                        api_base="http://localhost:11434",
+                        api_base=OLLAMA_BASE_URL,
                         temperature=0.4,
                         stream=True
                     )
@@ -614,6 +623,7 @@ Appointments allowed until {end_date}
             else:
            
                 full_bot_reply = response_message.content or ""
+                full_bot_reply = re.sub(r'\{\s*"name".*?"arguments".*?\}', '', full_bot_reply, flags=re.DOTALL).strip()
                 yield full_bot_reply
 
             try:
@@ -630,4 +640,4 @@ Appointments allowed until {end_date}
         db.session.rollback()
         return jsonify({'response': f"Error: {str(e)}"})                                  
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)

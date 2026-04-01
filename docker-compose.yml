@@ -1,24 +1,27 @@
-version: '3.8'
-
 services:
+  # Container 1: Your custom AI Chatbot
   chatbot:
     build: .
+    container_name: diabetes-bot
     ports:
       - "5000:5000"
     environment:
       - FLASK_ENV=production
+      - OLLAMA_URL=http://ollama_service:11434 
     volumes:
       - ./chromadb:/app/chromadb
-      - ./instance:/app/instance
+      - simple_vloume:/app/instance 
     depends_on:
       - ollama
     networks:
       - app-network
 
+  # Container 2: The base Ollama AI Engine
   ollama:
     image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
+    container_name: ollama_service
+    # NOTICE: We completely removed the ports here! 
+    # Windows can't block what it can't see!
     volumes:
       - ollama_data:/root/.ollama
     networks:
@@ -30,3 +33,4 @@ networks:
 
 volumes:
   ollama_data:
+  simple_vloume:
