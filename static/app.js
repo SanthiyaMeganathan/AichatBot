@@ -1,6 +1,7 @@
 const sendButton = document.getElementById('sendButton');
 const userInput = document.getElementById('userInput');
 const chatDisplay = document.getElementById('chatDisplay');
+const quickChips = document.querySelectorAll('.quick-chip');
 
 window.onload = async() =>{
     try{
@@ -11,6 +12,14 @@ window.onload = async() =>{
         console.error("failed to clear history.",e);
     }
 };
+
+quickChips.forEach((chip) => {
+    chip.addEventListener('click', () => {
+        const message = chip.dataset.message || chip.textContent.trim();
+        userInput.value = message;
+        userInput.focus();
+    });
+});
 
 async function sendMessage() {
     const text = userInput.value.trim(); 

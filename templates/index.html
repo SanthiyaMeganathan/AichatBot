@@ -8,18 +8,42 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-   <div class="myBox">    
-    <h2>AI Assistant for Dr. Akansha (Diabetic Specialist)</h2>
+    <div class="app-shell">
+        <div class="ambient ambient-one"></div>
+        <div class="ambient ambient-two"></div>
 
-    <div id="chatDisplay" class="chat-display"></div>
-    <div class="chat-input-container">
-        <input id ="userInput" class="chat-input" type="text" placeholder="Type your message here...">
-        <button id="sendButton" class="send-button">Send</button>      
+        <div class="chat-card">
+            <header class="chat-header">
+                <div class="brand-wrap">
+                    <div class="brand-icon">A</div>
+                    <div class="brand-text">
+                        <p class="eyebrow">Diabetes care support</p>
+                        <h2>Dr. Akansha’s Assistant</h2>
+                    </div>
+                </div>
+                <span class="status-pill">Online</span>
+            </header>
+
+            <div class="subheader">
+                <p>Ask about appointments, clinic policies, or diabetes care guidance.</p>
+            </div>
+
+            <div class="quick-actions" aria-label="Quick prompts">
+                <button class="quick-chip" type="button" data-message="Book an appointment">Book appointment</button>
+                <button class="quick-chip" type="button" data-message="What are the clinic timings?">Clinic timings</button>
+                <button class="quick-chip" type="button" data-message="What is the 4-hour cancellation policy?">Cancellation policy</button>
+            </div>
+
+            <div id="chatDisplay" class="chat-display" aria-live="polite"></div>
+
+            <div class="chat-input-container">
+                <input id="userInput" class="chat-input" type="text" placeholder="Type your message here..." aria-label="Type your message">
+                <button id="sendButton" class="send-button" type="button">Send</button>
+            </div>
+        </div>
     </div>
-</div>
 
- <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
- 
- <script src="{{ url_for('static', filename='app.js') }}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
