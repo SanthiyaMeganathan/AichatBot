@@ -13,7 +13,10 @@ import re
 app = Flask(__name__)
 
 # Use the configured Ollama endpoint, with local Ollama as the development fallback.
-OLLAMA_BASE_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+OLLAMA_BASE_URL = (os.getenv("OLLAMA_URL") or "http://localhost:11434").strip().rstrip("/")
+if not OLLAMA_BASE_URL.startswith(("http://", "https://")):
+    OLLAMA_BASE_URL = f"https://{OLLAMA_BASE_URL}"
+OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY")
 
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///chat_history.db'
@@ -562,6 +565,7 @@ MOST IMPORTANT RULE: never return anything as a json.
                 model='ollama/gpt-oss:120b-cloud',
                 messages=messages,
                 api_base=OLLAMA_BASE_URL,
+                api_key=OLLAMA_API_KEY,
                 temperature=0.4,
                 tools=TOOLS,
                 stream=False
@@ -612,6 +616,7 @@ MOST IMPORTANT RULE: never return anything as a json.
                         model='ollama/gpt-oss:120b-cloud',
                         messages=messages,
                         api_base=OLLAMA_BASE_URL,
+                        api_key=OLLAMA_API_KEY,
                         temperature=0.4,
                         stream=True
                     )
