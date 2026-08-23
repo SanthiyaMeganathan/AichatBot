@@ -12,8 +12,8 @@ import re
 
 app = Flask(__name__)
 
-# If Docker sets 'OLLAMA_URL', it uses that. Otherwise, it defaults to localhost.
-OLLAMA_BASE_URL = os.environ.get('OLLAMA_URL', 'http://localhost:11434')
+# Use the configured Ollama endpoint, with local Ollama as the development fallback.
+OLLAMA_BASE_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///chat_history.db'
